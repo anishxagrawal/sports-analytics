@@ -1,0 +1,13 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Data and generated outputs (not committed)
+data/
+outputs/
+
+# Logs
+logs/
