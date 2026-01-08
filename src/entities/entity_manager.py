@@ -1,0 +1,127 @@
+# src/entities/entity_manager.py
+
+"""
+Entity manager module for sports analytics system.
+
+Manages Player entities across frames by associating tracker outputs with
+persistent Player objects. Handles entity lifecycle and track ID mapping.
+"""
+
+from typing import List, Dict, Any, Optional
+from .player import Player
+
+
+class EntityManager:
+    """
+    Manages Player entities across video frames.
+    
+    Connects tracker outputs to persistent Player objects, handling creation,
+    updates, and lifecycle management. Maintains stable player identities
+    across frames.
+    
+    Usage:
+        manager = EntityManager()
+        for frame_tracks in track_stream:
+            manager.update(frame_tracks, frame_index=i)
+            active_players = manager.get_active_players()
+    """
+    
+    def __init__(self):
+        """Initialize entity manager with empty player storage."""
+        self._players: Dict[int, Player] = {}
+    
+    def update(
+        self,
+        tracks: List[Dict[str, Any]],
+        frame_index: int,
+        timestamp: Optional[float] = None
+    ) -> None:
+        """
+        Update entity manager with tracker outputs for one frame.
+        
+        Args:
+            tracks: List of track dictionaries with keys:
+                - track_id: int tracker identifier
+                - bbox: tuple (x1, y1, x2, y2)
+                - confidence: float
+                - class_id: int
+            frame_index: Current frame index
+            timestamp: Optional timestamp in seconds
+        
+        Notes:
+            - Creates new Players for unseen track_ids
+            - Updates existing Players when track_id is seen
+            - Marks unseen Players as missing
+        """
+        seen_track_ids = set()
+        
+        for track in tracks:
+            track_id = track['track_id']
+            bbox = track['bbox']
+            class_id = track['class_id']
+            
+            seen_track_ids.add(track_id)
+            
+            if track_id not in self._players:
+                self._players[track_id] = Player(
+                    track_id=track_id,
+                    class_id=class_id
+                )
+            
+            self._players[track_id].update(
+                bbox=bbox,
+                frame_index=frame_index,
+                timestamp=timestamp
+            )
+        
+        for track_id, player in self._players.items():
+            if track_id not in seen_track_ids:
+                player.mark_missing()
+    
+    def get_active_players(self) -> List[Player]:
+        """
+        Get list of currently active players.
+        
+        Returns:
+            List of Player objects with is_active() == True
+        """
+        return [
+            player for player in self._players.values()
+            if player.is_active()
+        ]
+    
+    def get_all_players(self) -> List[Player]:
+        """
+        Get list of all players (active and inactive).
+        
+        Returns:
+            List of all Player objects
+        """
+        return list(self._players.values())
+    
+    def get_player_by_track_id(self, track_id: int) -> Optional[Player]:
+        """
+        Get player by tracker ID.
+        
+        Args:
+            track_id: Tracker identifier
+        
+        Returns:
+            Player object or None if not found
+        """
+        return self._players.get(track_id)
+    
+    def to_dict(self) -> List[Dict[str, Any]]:
+        """
+        Convert all players to JSON-serializable list.
+        
+        Returns:
+            List of player dictionaries from Player.to_dict()
+        """
+        return [player.to_dict() for player in self._players.values()]
+    
+    def __repr__(self) -> str:
+        """String representation for debugging."""
+        active_count = len(self.get_active_players())
+        total_count = len(self._players)
+        return f"<EntityManager players={total_count} active={active_count}>"
