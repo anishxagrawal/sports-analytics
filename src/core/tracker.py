@@ -1,4 +1,4 @@
-src/core/tracker.py
+# src/core/tracker.py
 
 """
 Multi-object tracking module for sports analytics system.
@@ -19,7 +19,7 @@ Notes:
 
 from typing import List, Dict, Any
 import numpy as np
-from boxmot import BYTETracker
+from boxmot import ByteTrack
 
 
 class Tracker:
@@ -86,14 +86,19 @@ class Tracker:
         self.track_buffer = track_buffer
         self.match_thresh = match_thresh
         
-        self._tracker = BYTETracker(
+        self._tracker = ByteTrack(
             track_thresh=track_thresh,
             track_buffer=track_buffer,
             match_thresh=match_thresh,
             frame_rate=frame_rate
         )
     
-    def update(self, detections: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def update(
+    self,
+    detections: List[Dict[str, Any]],
+    frame: np.ndarray
+) -> List[Dict[str, Any]]:
+
         """
         Update tracker with new frame detections.
         
@@ -119,10 +124,10 @@ class Tracker:
             - All classes are tracked together; track_ids span all classes
         """
         if len(detections) == 0:
-            empty_dets = np.empty((0, 6))
-            self._tracker.update(empty_dets, None)
+            empty_dets = np.empty((0, 6), dtype=np.float32)
+            self._tracker.update(empty_dets, frame)
             return []
-        
+
         dets_array = np.array([
             [
                 det['bbox'][0],
@@ -135,7 +140,7 @@ class Tracker:
             for det in detections
         ], dtype=np.float32)
         
-        tracks_output = self._tracker.update(dets_array, None)
+        tracks_output = self._tracker.update(dets_array, frame)
         
         tracked_objects = []
         

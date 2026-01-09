@@ -9,19 +9,19 @@ on video input with commentary generation.
 
 from src.core.video import VideoReader
 from src.core.detector import YOLODetector
-from core.tracker import Tracker
-from entities.entity_manager import EntityManager
-from analytics.events import detect_player_events
-from commentary.engine import CommentaryEngine
-from commentary.prompt_builder import PromptBuilder
-from commentary.llm_adapter import LLMAdapter
+from src.core.tracker import Tracker
+from src.entities.entity_manager import EntityManager
+from src.analytics.events import detect_player_events
+from src.commentary.engine import CommentaryEngine
+from src.commentary.prompt_builder import PromptBuilder
+from src.commentary.llm_adapter import LLMAdapter
 
 
 def main():
     """Run the sports analytics pipeline on a video file."""
     
     # Configuration
-    video_path = "test_video.mp4"
+    video_path = "data/videos/test_video.mp4"
     model_path = "yolov8n.pt"
     conf_threshold = 0.5
     allowed_classes = {0}  # Person class
@@ -58,7 +58,7 @@ def main():
         detections = detector.detect(frame)
         
         # Tracking
-        tracks = tracker.update(detections)
+        tracks = tracker.update(detections, frame)
         
         # Entity management
         entity_manager.update(tracks, frame_idx, timestamp)
