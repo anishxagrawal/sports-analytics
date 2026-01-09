@@ -7,6 +7,8 @@ Connects all pipeline components and runs frame-by-frame processing
 on video input with commentary generation.
 """
 
+import cv2
+
 from src.core.video import VideoReader
 from src.core.detector import YOLODetector
 from src.core.tracker import Tracker
@@ -21,17 +23,26 @@ def main():
     """Run the sports analytics pipeline on a video file."""
     
     # Configuration
-    video_path = "data/videos/test_video.mp4"
+    video_path = "data/inputs/test_video.mp4"
     model_path = "yolov8n.pt"
     conf_threshold = 0.5
     allowed_classes = {0}  # Person class
     
-    # Initialize components
     print("Initializing pipeline...")
     
     video_reader = VideoReader(video_path)
     fps = video_reader.fps
-    
+
+    # Output video writer
+    output_path = "data/outputs/output.mp4"
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(
+        output_path,
+        fourcc,
+        fps,
+        (video_reader.width, video_reader.height)
+    )
+
     detector = YOLODetector(
         model_path=model_path,
         conf_threshold=conf_threshold,
@@ -40,7 +51,6 @@ def main():
     )
     
     tracker = Tracker(frame_rate=fps)
-    
     entity_manager = EntityManager()
     
     commentary_engine = CommentaryEngine(cooldown_seconds=5.0)
@@ -54,41 +64,47 @@ def main():
         frame_idx = metadata['frame_idx']
         timestamp = metadata['timestamp']
         
-        # Detection
         detections = detector.detect(frame)
-        
-        # Tracking
         tracks = tracker.update(detections, frame)
-        
-        # Entity management
+
+        # Draw tracking results
+        for track in tracks:
+            x1, y1, x2, y2 = map(int, track["bbox"])
+            track_id = track["track_id"]
+
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            cv2.putText(
+                frame,
+                f"ID {track_id}",
+                (x1, y1 - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0),
+                2
+            )
+
         entity_manager.update(tracks, frame_idx, timestamp)
         
         # Event detection
-        active_players = entity_manager.get_active_players()
         all_events = []
-        
-        for player in active_players:
-            player_events = detect_player_events(player, fps)
-            all_events.extend(player_events)
+        for player in entity_manager.get_active_players():
+            all_events.extend(detect_player_events(player, fps))
         
         # Commentary pipeline
-        if len(all_events) > 0:
-            # Convert events to narrative intents
+        if all_events:
             intents = commentary_engine.process_events(all_events, timestamp)
-            
-            if intents is not None:
-                # Build LLM prompt
+            if intents:
                 prompt = prompt_builder.build(intents)
-                
-                if prompt is not None:
-                    # Generate commentary
+                if prompt:
                     commentary = llm_adapter.generate(prompt)
-                    
-                    if commentary is not None:
+                    if commentary:
                         print(f"[{timestamp:.2f}s] {commentary}")
-    
-    # Cleanup
+
+        writer.write(frame)
+
+    # ✅ Proper cleanup (ONCE)
     video_reader.release()
+    writer.release()
     print("\nProcessing complete.")
 
 
