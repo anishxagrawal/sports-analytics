@@ -11,3 +11,6 @@ outputs/
 
 # Logs
 logs/
+
+# ML model weights
+*.pt
