@@ -1,4 +1,4 @@
-src/core/detector.py
+# src/core/detector.py
 
 """
 Object detection module for sports analytics system.
