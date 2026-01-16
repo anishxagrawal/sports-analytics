@@ -33,13 +33,19 @@ def compute_speed(player, fps: float) -> float:
     if fps <= 0:
         return 0.0
     
-    trajectory = player.get_trajectory(n=2)
-    
-    if len(trajectory) < 2:
-        return 0.0
-    
-    pos_prev = trajectory[-2]
-    pos_curr = trajectory[-1]
+    # Prefer ground positions if available, fallback to trajectory
+    if hasattr(player, 'ground_positions') and len(player.ground_positions) >= 2:
+        positions = list(player.ground_positions)
+        pos_prev = positions[-2]
+        pos_curr = positions[-1]
+    else:
+        trajectory = player.get_trajectory(n=2)
+        
+        if len(trajectory) < 2:
+            return 0.0
+        
+        pos_prev = trajectory[-2]
+        pos_curr = trajectory[-1]
     
     dx = pos_curr[0] - pos_prev[0]
     dy = pos_curr[1] - pos_prev[1]
@@ -74,13 +80,19 @@ def compute_direction(
         - If normalize=True and player is stationary, returns (0.0, 0.0)
         - Direction points from previous position to current position
     """
-    trajectory = player.get_trajectory(n=2)
-    
-    if len(trajectory) < 2:
-        return None
-    
-    pos_prev = trajectory[-2]
-    pos_curr = trajectory[-1]
+    # Prefer ground positions if available, fallback to trajectory
+    if hasattr(player, 'ground_positions') and len(player.ground_positions) >= 2:
+        positions = list(player.ground_positions)
+        pos_prev = positions[-2]
+        pos_curr = positions[-1]
+    else:
+        trajectory = player.get_trajectory(n=2)
+        
+        if len(trajectory) < 2:
+            return None
+        
+        pos_prev = trajectory[-2]
+        pos_curr = trajectory[-1]
     
     dx = pos_curr[0] - pos_prev[0]
     dy = pos_curr[1] - pos_prev[1]

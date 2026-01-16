@@ -7,8 +7,10 @@ Represents human participants in sports videos (players, athletes).
 Extends BaseEntity with player-specific semantics.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Tuple
+from collections import deque
 from .base_entity import BaseEntity
+from ..spatial.ground_point import bbox_to_ground_point
 
 
 class Player(BaseEntity):
@@ -21,6 +23,7 @@ class Player(BaseEntity):
     Usage:
         player = Player(track_id=1, class_id=0)
         player.update(bbox=(100, 200, 150, 250), frame_index=0)
+        player.record_ground_position(bbox=(100, 200, 150, 250))
         if player.is_active():
             position = player.get_position()
     """
@@ -49,6 +52,33 @@ class Player(BaseEntity):
             max_history=max_history,
             missing_threshold=missing_threshold
         )
+        
+        # Ground contact point history (bottom-center of bbox)
+        self.ground_positions: deque = deque(maxlen=max_history)
+    
+    def record_ground_position(self, bbox: Optional[Tuple[float, float, float, float]]) -> None:
+        """
+        Record ground contact point from bounding box.
+        
+        Should be called after update() to track ground position separately.
+        
+        Args:
+            bbox: Bounding box (x1, y1, x2, y2) or None
+        """
+        if bbox is None:
+            return
+        
+        ground_point = bbox_to_ground_point(bbox)
+        self.ground_positions.append(ground_point)
+    
+    def get_ground_position(self) -> Optional[Tuple[float, float]]:
+        """
+        Get the most recent ground contact point.
+        
+        Returns:
+            (x, y) ground position or None if no history
+        """
+        return self.ground_positions[-1] if self.ground_positions else None
     
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -59,6 +89,7 @@ class Player(BaseEntity):
         """
         data = super().to_dict()
         data['entity_type'] = self.entity_type
+        data['ground_positions'] = list(self.ground_positions)
         return data
     
     def __repr__(self) -> str:
