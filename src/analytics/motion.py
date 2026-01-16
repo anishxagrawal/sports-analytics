@@ -9,9 +9,10 @@ entity position histories. All functions are pure and do not modify entities.
 
 from typing import Optional, Tuple
 import numpy as np
+from .smoothing import smooth_trajectory_ema
 
 
-def compute_speed(player, fps: float) -> float:
+def compute_speed(player, fps: float, use_smoothing: bool = False) -> float:
     """
     Compute current speed of a player.
     
@@ -21,6 +22,7 @@ def compute_speed(player, fps: float) -> float:
     Args:
         player: Player entity with get_trajectory() method
         fps: Video frame rate (frames per second)
+        use_smoothing: If True, apply EMA smoothing to ground positions
     
     Returns:
         Speed in pixels per second, or 0.0 if insufficient history
@@ -36,6 +38,11 @@ def compute_speed(player, fps: float) -> float:
     # Prefer ground positions if available, fallback to trajectory
     if hasattr(player, 'ground_positions') and len(player.ground_positions) >= 2:
         positions = list(player.ground_positions)
+        
+        # Apply EMA smoothing if requested
+        if use_smoothing:
+            positions = smooth_trajectory_ema(positions, alpha=0.3)
+        
         pos_prev = positions[-2]
         pos_curr = positions[-1]
     else:
@@ -60,7 +67,8 @@ def compute_speed(player, fps: float) -> float:
 
 def compute_direction(
     player,
-    normalize: bool = True
+    normalize: bool = True,
+    use_smoothing: bool = False
 ) -> Optional[Tuple[float, float]]:
     """
     Compute current movement direction of a player.
@@ -71,6 +79,7 @@ def compute_direction(
     Args:
         player: Player entity with get_trajectory() method
         normalize: If True, return unit vector; if False, return raw displacement
+        use_smoothing: If True, apply EMA smoothing to ground positions
     
     Returns:
         Tuple of (dx, dy) as direction vector, or None if insufficient history
@@ -83,6 +92,11 @@ def compute_direction(
     # Prefer ground positions if available, fallback to trajectory
     if hasattr(player, 'ground_positions') and len(player.ground_positions) >= 2:
         positions = list(player.ground_positions)
+        
+        # Apply EMA smoothing if requested
+        if use_smoothing:
+            positions = smooth_trajectory_ema(positions, alpha=0.3)
+        
         pos_prev = positions[-2]
         pos_curr = positions[-1]
     else:
