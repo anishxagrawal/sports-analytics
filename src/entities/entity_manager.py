@@ -1,5 +1,3 @@
-# src/entities/entity_manager.py
-
 """
 Entity manager module for sports analytics system.
 
@@ -26,9 +24,14 @@ class EntityManager:
             active_players = manager.get_active_players()
     """
     
+    # Conservative deletion threshold: must exceed ByteTrack's buffer
+    # ByteTrack typically buffers 30 frames, we use 90 (3x safety margin)
+    MAX_FRAMES_MISSING = 90
+    
     def __init__(self):
         """Initialize entity manager with empty player storage."""
         self._players: Dict[int, Player] = {}
+        self._last_seen: Dict[int, int] = {}
     
     def update(
         self,
@@ -52,6 +55,7 @@ class EntityManager:
             - Creates new Players for unseen track_ids
             - Updates existing Players when track_id is seen
             - Marks unseen Players as missing
+            - Removes players missing for > MAX_FRAMES_MISSING frames
         """
         seen_track_ids = set()
         
@@ -73,10 +77,26 @@ class EntityManager:
                 frame_index=frame_index,
                 timestamp=timestamp
             )
+            
+            self._last_seen[track_id] = frame_index
         
+        # Mark unseen players as missing
         for track_id, player in self._players.items():
             if track_id not in seen_track_ids:
                 player.mark_missing()
+        
+        # Remove players that have been missing for extended period
+        # This prevents stale entities when track_ids are recycled
+        # Only delete after significantly longer than tracker buffer
+        permanently_lost_track_ids = [
+            track_id for track_id in self._players.keys()
+            if track_id in self._last_seen and 
+               frame_index - self._last_seen[track_id] > self.MAX_FRAMES_MISSING
+        ]
+        
+        for track_id in permanently_lost_track_ids:
+            del self._players[track_id]
+            del self._last_seen[track_id]
     
     def get_active_players(self) -> List[Player]:
         """
