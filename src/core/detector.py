@@ -44,7 +44,7 @@ class YOLODetector:
         model_path: str,
         conf_threshold: float = 0.25,
         allowed_classes: Optional[Set[int]] = None,
-        device: str = "cpu"
+        device: str = "cuda"
     ):
         """
         Initialize YOLO detector.

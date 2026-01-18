@@ -9,37 +9,40 @@ frames using detection inputs and returns tracker-agnostic track dictionaries.
 Notes:
     - Tracker is stateful across frames
     - Frame rate must match the actual video FPS for optimal performance
-    - This tracker is CLASS-AGNOSTIC: it tracks all objects together regardless
-      of class_id. If you need per-class tracking (e.g., separate track IDs for
-      players vs. balls), instantiate one Tracker per class and filter detections
-      before calling update().
-    - Track IDs are unique integers that persist across frames for the same object
+    - ByteTrack tracking is CLASS-AGNOSTIC: it tracks all objects together 
+      regardless of class_id. Track IDs are unique integers that persist 
+      across frames for the same object.
+    - Ball tracking uses CLASS-SPECIFIC logic: detections with class_id == 32
+      (COCO sports ball) are processed separately by BallTracker for 
+      stabilization and prediction.
     - ByteTrack output format: [x1, y1, x2, y2, track_id, conf, class_id, index]
 """
 
 from typing import List, Dict, Any
 import numpy as np
 from boxmot import ByteTrack
+from core.ball_tracker import BallTracker
 
 
 class Tracker:
     """
-    Multi-object tracker using ByteTrack.
+    Multi-object tracker using ByteTrack with specialized ball tracking.
     
     Maintains object identities across frames by associating detections using
     motion and appearance cues. Stateful across frame updates.
     
-    IMPORTANT: This tracker is class-agnostic. All objects are tracked together
-    in a single tracking space. For per-class tracking, create separate Tracker
-    instances and filter detections by class before updating.
+    ByteTrack tracking is class-agnostic: all objects are tracked together
+    in a single tracking space. However, ball detections (class_id == 32) are
+    additionally processed by BallTracker for stabilization and prediction.
     
     Usage:
         tracker = Tracker(frame_rate=30.0)
-        for frame_detections in detection_stream:
-            tracks = tracker.update(frame_detections)
-            for track in tracks:
+        for frame_idx, frame_detections in enumerate(detection_stream):
+            result = tracker.update(frame_detections, frame, frame_idx)
+            for track in result['tracks']:
                 track_id = track['track_id']
                 x1, y1, x2, y2 = track['bbox']
+            ball_state = result['ball']
     
     Attributes:
         frame_rate: Video frame rate (FPS) for motion prediction
@@ -47,6 +50,9 @@ class Tracker:
         track_buffer: Number of frames to keep lost tracks alive
         match_thresh: IOU threshold for matching detections to tracks
     """
+    
+    # COCO class ID for sports ball
+    BALL_CLASS_ID = 32
     
     # ByteTrack output array indices (documented for maintainability)
     _BYTE_X1 = 0
@@ -92,13 +98,15 @@ class Tracker:
             match_thresh=match_thresh,
             frame_rate=frame_rate
         )
+        
+        self.ball_tracker = BallTracker()
     
     def update(
-    self,
-    detections: List[Dict[str, Any]],
-    frame: np.ndarray
-) -> List[Dict[str, Any]]:
-
+        self,
+        detections: List[Dict[str, Any]],
+        frame: np.ndarray,
+        frame_index: int
+    ) -> Dict[str, Any]:
         """
         Update tracker with new frame detections.
         
@@ -107,26 +115,57 @@ class Tracker:
                 - bbox: tuple (x1, y1, x2, y2) in pixel coordinates
                 - confidence: float confidence score
                 - class_id: int class identifier
+            frame: Frame array for ByteTrack
+            frame_index: Current frame index from video
         
         Returns:
-            List of tracked object dictionaries, each containing:
-                - track_id: int unique track identifier
-                - bbox: tuple (x1, y1, x2, y2) in pixel coordinates
-                - confidence: float detection confidence
-                - class_id: int class identifier
+            Dictionary containing:
+                - tracks: List of tracked object dictionaries, each containing:
+                    - track_id: int unique track identifier
+                    - bbox: tuple (x1, y1, x2, y2) in pixel coordinates
+                    - confidence: float detection confidence
+                    - class_id: int class identifier
+                - ball: Ball tracking state dictionary from BallTracker
             
-            Returns empty list if no active tracks.
+            Returns empty tracks list if no active tracks.
         
         Notes:
             - Tracker maintains state across calls
             - Track IDs persist across frames for the same object
             - Lost tracks are kept alive for track_buffer frames
-            - All classes are tracked together; track_ids span all classes
+            - ByteTrack tracks all classes together; track_ids span all classes
+            - Ball (class_id == 32) is additionally tracked by BallTracker
         """
+        # Extract ball detection (class_id == 32)
+        ball_detections = [det for det in detections if det['class_id'] == self.BALL_CLASS_ID]
+        
+        ball_position = None
+        ball_confidence = None
+        
+        if ball_detections:
+            # Use highest confidence ball detection
+            best_ball = max(ball_detections, key=lambda d: d['confidence'])
+            x1, y1, x2, y2 = best_ball['bbox']
+            center_x = (x1 + x2) / 2.0
+            center_y = (y1 + y2) / 2.0
+            ball_position = (center_x, center_y)
+            ball_confidence = best_ball['confidence']
+        
+        # Update ball tracker
+        ball_state = self.ball_tracker.update(
+            position=ball_position,
+            frame_index=frame_index,
+            confidence=ball_confidence
+        )
+        
+        # Update ByteTrack
         if len(detections) == 0:
             empty_dets = np.empty((0, 6), dtype=np.float32)
             self._tracker.update(empty_dets, frame)
-            return []
+            return {
+                'tracks': [],
+                'ball': ball_state
+            }
 
         dets_array = np.array([
             [
@@ -145,7 +184,10 @@ class Tracker:
         tracked_objects = []
         
         if tracks_output is None or len(tracks_output) == 0:
-            return tracked_objects
+            return {
+                'tracks': tracked_objects,
+                'ball': ball_state
+            }
         
         for track in tracks_output:
             if len(track) < self._BYTE_EXPECTED_COLS:
@@ -168,4 +210,7 @@ class Tracker:
             
             tracked_objects.append(tracked_obj)
         
-        return tracked_objects
+        return {
+            'tracks': tracked_objects,
+            'ball': ball_state
+        }

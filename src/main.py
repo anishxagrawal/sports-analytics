@@ -1,3 +1,4 @@
+# src/main.py
 """
 Main orchestration script for sports analytics pipeline.
 
@@ -128,7 +129,7 @@ def main():
     video_path = project_root / "data/inputs/test_video_2.mp4"
     model_path = "yolov8n.pt"
     conf_threshold = 0.5
-    allowed_classes = {0}  # Person class
+    allowed_classes = {0, 32}  # Person class
     
     # Relaxed confidence threshold for jersey color extraction
     JERSEY_CONFIDENCE_THRESHOLD = 0.25
@@ -175,9 +176,12 @@ def main():
         timestamp = metadata['timestamp']
         
         detections = detector.detect(frame)
-        tracks = tracker.update(detections, frame)
+        result = tracker.update(detections, frame, frame_idx)
+        tracks = result["tracks"]
+        ball_state = result["ball"]
 
         entity_manager.update(tracks, frame_idx, timestamp)
+        entity_manager.update_ball(ball_state, frame_idx)
         
         # Build track_id -> bbox mapping from current frame
         track_bbox_map = {track["track_id"]: track["bbox"] for track in tracks}
@@ -278,6 +282,21 @@ def main():
                 (0, 255, 0),
                 2
             )
+        
+        # Draw ball visualization
+        ball = entity_manager.ball
+        if ball.is_visible():
+            ball_position = ball.get_position()
+            if ball_position is not None:
+                ball_x, ball_y = int(ball_position[0]), int(ball_position[1])
+                cv2.circle(frame, (ball_x, ball_y), 6, (0, 140, 255), -1)
+                
+                trajectory = ball.get_trajectory()
+                if len(trajectory) > 1:
+                    for i in range(len(trajectory) - 1):
+                        pt1 = (int(trajectory[i][0]), int(trajectory[i][1]))
+                        pt2 = (int(trajectory[i + 1][0]), int(trajectory[i + 1][1]))
+                        cv2.line(frame, pt1, pt2, (0, 180, 255), 2)
         
         # Event detection
         all_events = []

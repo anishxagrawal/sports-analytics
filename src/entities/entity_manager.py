@@ -1,3 +1,5 @@
+# src/entities/entity_manager.py
+
 """
 Entity manager module for sports analytics system.
 
@@ -7,6 +9,7 @@ persistent Player objects. Handles entity lifecycle and track ID mapping.
 
 from typing import List, Dict, Any, Optional
 from .player import Player
+from .ball import Ball
 
 
 class EntityManager:
@@ -32,6 +35,7 @@ class EntityManager:
         """Initialize entity manager with empty player storage."""
         self._players: Dict[int, Player] = {}
         self._last_seen: Dict[int, int] = {}
+        self.ball = Ball()
     
     def update(
         self,
@@ -97,6 +101,28 @@ class EntityManager:
         for track_id in permanently_lost_track_ids:
             del self._players[track_id]
             del self._last_seen[track_id]
+    
+    def update_ball(self, ball_state: Dict[str, Any], frame_index: int) -> None:
+        """
+        Update ball entity with tracking state.
+        
+        Args:
+            ball_state: Ball state dictionary with keys:
+                - position: tuple (x, y) or None
+                - velocity: tuple (vx, vy) or None
+                - confidence: float or None
+                - visible: bool
+            frame_index: Current frame index
+        """
+        if ball_state["position"] is not None:
+            self.ball.update(
+                position=ball_state["position"],
+                frame_index=frame_index,
+                confidence=ball_state["confidence"],
+                velocity=ball_state["velocity"]
+            )
+        else:
+            self.ball.mark_not_visible()
     
     def get_active_players(self) -> List[Player]:
         """
