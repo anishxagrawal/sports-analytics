@@ -9,7 +9,7 @@ entity position histories. All functions are pure and do not modify entities.
 
 from typing import Optional, Tuple
 import numpy as np
-from .smoothing import smooth_trajectory_ema
+from core.smoothing import smooth_trajectory_ema
 
 
 def compute_speed(player, fps: float, use_smoothing: bool = False) -> float:
