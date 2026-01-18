@@ -1,16 +1,36 @@
-# Python cache
+# =========================
+# Python
+# =========================
 __pycache__/
 *.pyc
 
+# =========================
 # Virtual environment
+# =========================
 venv/
 
-# Data and generated outputs (not committed)
+# =========================
+# Runtime data & outputs
+# =========================
 data/
 outputs/
-
-# Logs
 logs/
 
-# ML model weights
+# =========================
+# YOLO / ML training
+# =========================
+runs/
+*.cache
+
+# Ignore training datasets (keep config & scripts)
+training/**/data/*
+
+# =========================
+# Model weights
+# =========================
+# Ignore all weights by default
 *.pt
+
+# BUT keep final & pretrained models
+!models/pretrained/*.pt
+!models/fine_tuned/*.pt
