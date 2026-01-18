@@ -125,7 +125,7 @@ def main():
     project_root = Path(__file__).parent.parent
     
     # Configuration
-    video_path = project_root / "data/inputs/test_video.mp4"
+    video_path = project_root / "data/inputs/test_video_2.mp4"
     model_path = "yolov8n.pt"
     conf_threshold = 0.5
     allowed_classes = {0}  # Person class
