@@ -3,34 +3,82 @@
 # =========================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
 # =========================
 # Virtual environment
 # =========================
 venv/
+.env
+
+# =========================
+# IDE / OS
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
 # =========================
 # Runtime data & outputs
 # =========================
 data/
 outputs/
+output/
 logs/
+debug/
+visualizations/
+rendered/
 
 # =========================
 # YOLO / ML training
 # =========================
 runs/
+wandb/
 *.cache
+.cache/
 
-# Ignore training datasets (keep config & scripts)
+# Ignore training datasets (keep configs & scripts)
 training/**/data/*
+
+# =========================
+# Videos & media (generated / raw)
+# =========================
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.webp
 
 # =========================
 # Model weights
 # =========================
 # Ignore all weights by default
 *.pt
+*.onnx
+*.engine
 
 # BUT keep final & pretrained models
 !models/pretrained/*.pt
 !models/fine_tuned/*.pt
+
+# =========================
+# Experiments & temp
+# =========================
+exp/
+exp*/
+tmp/
+temp/
+*.tmp
+*.bak
+
+# =========================
+# Testing / coverage
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
