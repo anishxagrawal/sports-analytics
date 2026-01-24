@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 
-VIDEO_PATH = "data/videos/match3.mp4"
+VIDEO_PATH = "data/videos/match.mp4"
 OUTPUT_DIR = Path("tmp/raw_frames/match1")
 TARGET_FPS = 5
 DIFF_THRESHOLD = 25  # controls similarity filtering
