@@ -68,6 +68,10 @@ class EntityManager:
             bbox = track['bbox']
             class_id = track['class_id']
             
+            # Only process Player class (class_id == 0)
+            if class_id != 0:
+                continue
+            
             seen_track_ids.add(track_id)
             
             if track_id not in self._players:
