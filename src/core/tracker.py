@@ -12,8 +12,8 @@ Notes:
     - ByteTrack tracking is CLASS-AGNOSTIC: it tracks all objects together 
       regardless of class_id. Track IDs are unique integers that persist 
       across frames for the same object.
-    - Ball tracking uses CLASS-SPECIFIC logic: detections with class_id == 32
-      (COCO sports ball) are processed separately by BallTracker for 
+    - Ball tracking uses CLASS-SPECIFIC logic: detections with class_id == 1
+      (Ball class) are processed separately by BallTracker for 
       stabilization and prediction.
     - ByteTrack output format: [x1, y1, x2, y2, track_id, conf, class_id, index]
 """
@@ -32,7 +32,7 @@ class Tracker:
     motion and appearance cues. Stateful across frame updates.
     
     ByteTrack tracking is class-agnostic: all objects are tracked together
-    in a single tracking space. However, ball detections (class_id == 32) are
+    in a single tracking space. However, ball detections (class_id == 1) are
     additionally processed by BallTracker for stabilization and prediction.
     
     Usage:
@@ -51,8 +51,8 @@ class Tracker:
         match_thresh: IOU threshold for matching detections to tracks
     """
     
-    # COCO class ID for sports ball
-    BALL_CLASS_ID = 32
+    # Ball class ID for this model
+    BALL_CLASS_ID = 1
     
     # ByteTrack output array indices (documented for maintainability)
     _BYTE_X1 = 0
@@ -134,9 +134,9 @@ class Tracker:
             - Track IDs persist across frames for the same object
             - Lost tracks are kept alive for track_buffer frames
             - ByteTrack tracks all classes together; track_ids span all classes
-            - Ball (class_id == 32) is additionally tracked by BallTracker
+            - Ball (class_id == 1) is additionally tracked by BallTracker
         """
-        # Extract ball detection (class_id == 32)
+        # Extract ball detection (class_id == 1)
         ball_detections = [det for det in detections if det['class_id'] == self.BALL_CLASS_ID]
         
         ball_position = None
