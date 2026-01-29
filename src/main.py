@@ -1,4 +1,5 @@
 # src/main.py
+
 """
 Main orchestration script for sports analytics pipeline.
 
@@ -19,6 +20,8 @@ from analytics.events import detect_player_events
 from commentary.engine import CommentaryEngine
 from commentary.prompt_builder import PromptBuilder
 from commentary.llm_adapter import LLMAdapter
+from spatial.projection_pipeline import ProjectionPipeline
+from visualization.pitch_overlay import PitchOverlay
 
 
 def main():
@@ -28,7 +31,7 @@ def main():
     project_root = Path(__file__).parent.parent
     
     # Configuration
-    video_path = project_root / "data/inputs/test_video_2.mp4"
+    video_path = project_root / "data/inputs/test_video_6.mp4"
     model_path = str(get_model("ball"))
     conf_threshold = 0.12
     allowed_classes = {0, 1, 2}
@@ -47,6 +50,7 @@ def main():
     
     print("Initializing pipeline...")
     
+    print("Loading video...")
     video_reader = VideoReader(str(video_path))
     fps = video_reader.fps
 
@@ -72,6 +76,22 @@ def main():
     tracker = Tracker(frame_rate=fps, track_thresh=0.25)
     entity_manager = EntityManager()
     
+    # Initialize spatial projection pipeline
+    # Converts bounding boxes to ground points and field-space coordinates
+    projection_pipeline = ProjectionPipeline(enable_anchoring=False)
+    
+    # --- Pitch overlay integration ---
+    # Initialize debug visualization overlay
+    pitch_overlay = PitchOverlay(
+        width=300,
+        height=200,
+        position="top-right",
+        margin=20,
+        alpha=0.85,
+        enabled=True
+    )
+    # --- End pitch overlay integration ---
+    
     commentary_engine = CommentaryEngine(cooldown_seconds=5.0)
     prompt_builder = PromptBuilder()
     llm_adapter = LLMAdapter()
@@ -79,9 +99,14 @@ def main():
     print(f"Processing video at {fps} FPS...\n")
     
     # Frame-by-frame processing loop
+    frame_count = 0
     for frame, metadata in video_reader:
+        frame_count += 1
         frame_idx = metadata['frame_idx']
         timestamp = metadata['timestamp']
+        
+        if frame_count % 50 == 0:
+            print(f"Frame {frame_count}...")
         
         detections = detector.detect(frame)
         
@@ -129,16 +154,58 @@ def main():
                 1
             )
 
-
         result = tracker.update(detections, frame, frame_idx)
         tracks = result["tracks"]
         ball_state = result["ball"]
+        
+        if frame_idx % 50 == 0:
+            print(f"Frame {frame_idx}: {len(detections)} detections, {len(tracks)} tracks")
 
-        entity_manager.update(tracks, frame_idx, timestamp)
+        enriched_tracks = projection_pipeline.process_frame(
+            detections=tracks,
+            frame_shape=(frame.shape[0], frame.shape[1]),
+            frame=frame,
+            frame_index=frame_idx
+        )
+        
+        if frame_idx == 10:
+            print(f"DEBUG: Num enriched tracks: {len(enriched_tracks)}")
+            if enriched_tracks:
+                print(f"DEBUG: First track field_position: {enriched_tracks[0].get('field_position')}")
+                print(f"DEBUG: First track keys: {enriched_tracks[0].keys()}")
+
+        if ball_state.get("position") is not None:
+            ball_pos = ball_state["position"]
+            ball_bbox = (
+                ball_pos[0] - 10,
+                ball_pos[1] - 10,
+                ball_pos[0] + 10,
+                ball_pos[1] + 10
+            )
+            
+            ball_detection = {
+                'bbox': ball_bbox,
+                'class_id': 1,
+                'confidence': ball_state.get("confidence", 0.9),
+                'track_id': -1
+            }
+            
+            enriched_ball = projection_pipeline.process_frame(
+                detections=[ball_detection],
+                frame_shape=(frame.shape[0], frame.shape[1]),
+                frame=frame,
+                frame_index=frame_idx
+            )
+            
+            if enriched_ball:
+                ball_state['field_position'] = enriched_ball[0].get('field_position')
+                ball_state['field_position_anchored'] = enriched_ball[0].get('field_position_anchored')
+
+        entity_manager.update(enriched_tracks, frame_idx, timestamp)
         entity_manager.update_ball(ball_state, frame_idx)
         
-        # Draw tracking results
-        for track in tracks:
+        # Draw tracking results (pixel-space visualization unchanged)
+        for track in enriched_tracks:
             x1, y1, x2, y2 = map(int, track["bbox"])
             track_id = track["track_id"]
 
@@ -186,6 +253,34 @@ def main():
                     if commentary:
                         print(f"[{timestamp:.2f}s] {commentary}")
 
+        # --- Pitch overlay integration ---
+        # Collect field positions for visualization
+        players_for_viz = []
+        for player in entity_manager.get_active_players():
+            field_pos = getattr(player, 'field_position', None)
+            field_pos_anchored = getattr(player, 'field_position_anchored', None)
+            players_for_viz.append({
+                'field_position': field_pos,
+                'field_position_anchored': field_pos_anchored
+            })
+            if frame_idx % 30 == 0 and field_pos is not None:
+                print(f"DEBUG: Player has field_position: {field_pos}")
+        
+        ball_for_viz = None
+        if entity_manager.ball.is_visible():
+            field_pos = getattr(entity_manager.ball, 'field_position', None)
+            field_pos_anchored = getattr(entity_manager.ball, 'field_position_anchored', None)
+            ball_for_viz = {
+                'field_position': field_pos,
+                'field_position_anchored': field_pos_anchored
+            }
+            if frame_idx % 30 == 0:
+                print(f"DEBUG: Ball field_position: {field_pos}, anchored: {field_pos_anchored}")
+        
+        # Render overlay onto frame
+        frame = pitch_overlay.render(frame, players_for_viz, ball_for_viz)
+        # --- End pitch overlay integration ---
+
         writer.write(frame)
 
     # ✅ Proper cleanup (ONCE)
@@ -196,4 +291,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()   
+    main()
