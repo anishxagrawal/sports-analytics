@@ -88,6 +88,14 @@ class EntityManager:
                     timestamp=timestamp
                 )
                 
+                # Propagate spatial attributes if present
+                if 'field_position' in track:
+                    self._players[track_id].field_position = track['field_position']
+                if 'field_position_anchored' in track:
+                    self._players[track_id].field_position_anchored = track['field_position_anchored']
+                if 'ground_point' in track:
+                    self._players[track_id].ground_point = track['ground_point']
+                
                 self._last_seen_players[track_id] = frame_index
             
             # Process Referee class (class_id == 2)
@@ -105,6 +113,14 @@ class EntityManager:
                     frame_index=frame_index,
                     timestamp=timestamp
                 )
+                
+                # Propagate spatial attributes if present
+                if 'field_position' in track:
+                    self._referees[track_id].field_position = track['field_position']
+                if 'field_position_anchored' in track:
+                    self._referees[track_id].field_position_anchored = track['field_position_anchored']
+                if 'ground_point' in track:
+                    self._referees[track_id].ground_point = track['ground_point']
                 
                 self._last_seen_referees[track_id] = frame_index
         
@@ -152,6 +168,8 @@ class EntityManager:
                 - velocity: tuple (vx, vy) or None
                 - confidence: float or None
                 - visible: bool
+                - field_position: tuple (fx, fy) or None (optional)
+                - field_position_anchored: tuple (fx, fy) or None (optional)
             frame_index: Current frame index
         """
         if ball_state["position"] is not None:
@@ -161,6 +179,11 @@ class EntityManager:
                 confidence=ball_state["confidence"],
                 velocity=ball_state["velocity"]
             )
+            
+            if 'field_position' in ball_state and ball_state['field_position'] is not None:
+                self.ball.field_position = ball_state['field_position']
+            if 'field_position_anchored' in ball_state and ball_state['field_position_anchored'] is not None:
+                self.ball.field_position_anchored = ball_state['field_position_anchored']
         else:
             self.ball.mark_not_visible()
     
