@@ -34,6 +34,12 @@ class Ball:
     # Maximum number of positions to keep in trajectory history
     max_trajectory_length: int = 30
     
+    # Field-space position: normalized coordinates [0, 1] × [0, 1]
+    field_position: Optional[Tuple[float, float]] = None
+    
+    # Field-space position after soft anchoring for stability
+    field_position_anchored: Optional[Tuple[float, float]] = None
+    
     def update(
         self,
         position: Optional[Tuple[float, float]],
