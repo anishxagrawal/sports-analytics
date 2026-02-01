@@ -90,9 +90,9 @@ class EntityManager:
                 
                 # Propagate spatial attributes if present
                 if 'field_position' in track:
-                    self._players[track_id].field_position = track['field_position']
+                    self._players[track_id].field_positions.append(track['field_position'])
                 if 'field_position_anchored' in track:
-                    self._players[track_id].field_position_anchored = track['field_position_anchored']
+                    self._players[track_id].field_positions_anchored.append(track['field_position_anchored'])
                 if 'ground_point' in track:
                     self._players[track_id].ground_point = track['ground_point']
                 
@@ -180,6 +180,7 @@ class EntityManager:
                 velocity=ball_state["velocity"]
             )
             
+            # Propagate field position data if present
             if 'field_position' in ball_state and ball_state['field_position'] is not None:
                 self.ball.field_position = ball_state['field_position']
             if 'field_position_anchored' in ball_state and ball_state['field_position_anchored'] is not None:
