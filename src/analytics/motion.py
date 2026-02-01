@@ -35,11 +35,9 @@ def compute_speed(player, fps: float, use_smoothing: bool = False) -> float:
     if fps <= 0:
         return 0.0
     
-    # Prefer ground positions if available, fallback to trajectory
     if hasattr(player, 'ground_positions') and len(player.ground_positions) >= 2:
         positions = list(player.ground_positions)
         
-        # Apply EMA smoothing if requested
         if use_smoothing:
             positions = smooth_trajectory_ema(positions, alpha=0.3)
         
@@ -89,11 +87,9 @@ def compute_direction(
         - If normalize=True and player is stationary, returns (0.0, 0.0)
         - Direction points from previous position to current position
     """
-    # Prefer ground positions if available, fallback to trajectory
     if hasattr(player, 'ground_positions') and len(player.ground_positions) >= 2:
         positions = list(player.ground_positions)
         
-        # Apply EMA smoothing if requested
         if use_smoothing:
             positions = smooth_trajectory_ema(positions, alpha=0.3)
         
@@ -123,3 +119,121 @@ def compute_direction(
     dy_norm = dy / magnitude
     
     return (float(dx_norm), float(dy_norm))
+
+
+def compute_field_velocity(player, fps: float, anchored: bool = True) -> Tuple[float, float]:
+    """
+    Compute current velocity of a player in field space.
+    
+    Uses the last two field-space positions to estimate instantaneous
+    velocity in field-units per second.
+    
+    Args:
+        player: Player entity with field position attributes
+        fps: Video frame rate (frames per second)
+        anchored: If True, prefer field_positions_anchored; otherwise use field_positions
+    
+    Returns:
+        Tuple of (vx, vy) in field-units per second, or (0.0, 0.0) if insufficient data
+    
+    Notes:
+        - Requires at least 2 positions in the selected field position history
+        - Field space is normalized [0,1] x [0,1]
+        - Velocity is computed as displacement / time_delta
+        - Time delta is computed as 1/fps (one frame interval)
+    """
+    if fps <= 0:
+        return (0.0, 0.0)
+    
+    positions = None
+    
+    if anchored:
+        if hasattr(player, 'field_positions_anchored') and player.field_positions_anchored:
+            positions = list(player.field_positions_anchored)
+        elif hasattr(player, 'field_positions') and player.field_positions:
+            positions = list(player.field_positions)
+    else:
+        if hasattr(player, 'field_positions') and player.field_positions:
+            positions = list(player.field_positions)
+    
+    if positions is None or len(positions) < 2:
+        return (0.0, 0.0)
+    
+    pos_prev = positions[-2]
+    pos_curr = positions[-1]
+    
+    if pos_prev is None or pos_curr is None:
+        return (0.0, 0.0)
+    
+    dx = pos_curr[0] - pos_prev[0]
+    dy = pos_curr[1] - pos_prev[1]
+    
+    time_delta = 1.0 / fps
+    
+    vx = dx / time_delta
+    vy = dy / time_delta
+    
+    return (float(vx), float(vy))
+
+
+def compute_field_speed(player, fps: float, anchored: bool = True) -> float:
+    """
+    Compute current speed of a player in field space.
+    
+    Computes scalar speed from field velocity magnitude.
+    
+    Args:
+        player: Player entity with field position attributes
+        fps: Video frame rate (frames per second)
+        anchored: If True, prefer field_position_anchored; otherwise use field_position
+    
+    Returns:
+        Speed in field-units per second, or 0.0 if insufficient data
+    
+    Notes:
+        - Speed is the magnitude of the velocity vector
+        - Uses compute_field_velocity internally
+    """
+    vx, vy = compute_field_velocity(player, fps, anchored)
+    
+    speed = np.sqrt(vx**2 + vy**2)
+    
+    return float(speed)
+
+
+def compute_distance_traveled(entity, max_history: Optional[int] = None) -> float:
+    """
+    Compute total distance traveled by an entity.
+    
+    Sums Euclidean distances between consecutive positions in the entity's trajectory.
+    
+    Args:
+        entity: Entity with get_trajectory() method
+        max_history: Optional limit on how many recent positions to consider.
+                    If None, uses entire trajectory.
+    
+    Returns:
+        Total distance traveled in pixels, or 0.0 if insufficient history
+    
+    Notes:
+        - Requires at least 2 positions in trajectory
+        - Distance is computed in pixel space (not field space)
+        - Stateless function; does not modify entity
+    """
+    trajectory = entity.get_trajectory()
+    
+    if len(trajectory) < 2:
+        return 0.0
+    
+    # Optionally limit to recent history
+    if max_history is not None and max_history > 0:
+        trajectory = trajectory[-max_history:]
+    
+    total_distance = 0.0
+    for i in range(len(trajectory) - 1):
+        pt1 = trajectory[i]
+        pt2 = trajectory[i + 1]
+        distance = np.sqrt((pt2[0] - pt1[0])**2 + (pt2[1] - pt1[1])**2)
+        total_distance += distance
+    
+    return float(total_distance)
