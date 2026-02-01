@@ -20,10 +20,10 @@ from analytics.events import detect_player_events
 from commentary.engine import CommentaryEngine
 from commentary.prompt_builder import PromptBuilder
 from commentary.llm_adapter import LLMAdapter
-from spatial.projection_pipeline import ProjectionPipeline
+from spatial.world_projection_pipeline import WorldProjectionPipeline
+from spatial.calibration_tool import ReferenceFrameCalibrator
 from visualization.pitch_overlay import PitchOverlay
 from visualization.object_renderer import draw_players_with_metrics, draw_ball_with_metrics
-from analytics.motion import compute_field_speed
 
 
 def main():
@@ -82,10 +82,29 @@ def main():
     tracker = Tracker(frame_rate=fps, track_thresh=0.25)
     entity_manager = EntityManager()
     
-    # Initialize spatial projection pipeline
-    # Converts bounding boxes to ground points and field-space coordinates
-    # with soft spatial anchoring for stability
-    projection_pipeline = ProjectionPipeline(enable_anchoring=True)
+    # Initialize world projection pipeline for real-world metrics (m/s)
+    print("Initializing world projection pipeline...")
+    video_reader_temp = VideoReader(str(video_path))
+    reference_frame, _ = next(video_reader_temp)
+    video_reader_temp.release()
+    
+    # Load calibration (use sample if not found)
+    try:
+        img_pts, world_pts = ReferenceFrameCalibrator.load_calibration(
+            str(project_root / "calibration.json")
+        )
+        print(f"Loaded calibration with {len(img_pts)} keypoints")
+    except FileNotFoundError:
+        print("WARNING: calibration.json not found. Using sample calibration.")
+        world_pts = [(0, 0), (105, 0), (0, 68), (105, 68)]
+    
+    world_pipeline = WorldProjectionPipeline(
+        reference_frame=reference_frame,
+        reference_keypoints_world=world_pts,
+        fps=fps,
+        enable_homography=True,
+        enable_velocity=True
+    )
     
     # --- Pitch overlay integration ---
     # Initialize debug visualization overlay
@@ -136,12 +155,8 @@ def main():
         tracks = result["tracks"]
         ball_state = result["ball"]
 
-        enriched_tracks = projection_pipeline.process_frame(
-            detections=tracks,
-            frame_shape=(frame.shape[0], frame.shape[1]),
-            frame=frame,
-            frame_index=frame_idx
-        )
+        # Process through world projection pipeline
+        enriched_tracks = world_pipeline.process_frame(frame, tracks, frame_idx)
 
         if ball_state.get("position") is not None:
             ball_pos = ball_state["position"]
@@ -159,16 +174,12 @@ def main():
                 'track_id': -1
             }
             
-            enriched_ball = projection_pipeline.process_frame(
-                detections=[ball_detection],
-                frame_shape=(frame.shape[0], frame.shape[1]),
-                frame=frame,
-                frame_index=frame_idx
-            )
+            enriched_ball = world_pipeline.process_frame(frame, [ball_detection], frame_idx)
             
             if enriched_ball:
-                ball_state['field_position'] = enriched_ball[0].get('field_position')
-                ball_state['field_position_anchored'] = enriched_ball[0].get('field_position_anchored')
+                ball_state['world_position'] = enriched_ball[0].get('world_position')
+                ball_state['velocity'] = enriched_ball[0].get('velocity')
+                ball_state['speed'] = enriched_ball[0].get('speed')
 
         entity_manager.update(enriched_tracks, frame_idx, timestamp)
         entity_manager.update_ball(ball_state, frame_idx)
@@ -232,6 +243,16 @@ def main():
         # Render overlay onto frame
         frame = pitch_overlay.render(frame, players_for_viz, ball_for_viz)
         # --- End pitch overlay integration ---
+        
+        # Print world-space metrics (real-world speed in m/s)
+        if frame_count % 30 == 0:  # Print every 30 frames to avoid spam
+            for track in enriched_tracks:
+                if track.get('speed') is not None:
+                    track_id = track.get('track_id', 'unknown')
+                    world_pos = track.get('world_position', (0, 0))
+                    speed = track.get('speed', 0)
+                    if speed > 0:
+                        print(f"  Player {track_id}: ({world_pos[0]:.1f}m, {world_pos[1]:.1f}m) @ {speed:.2f}m/s")
 
         # Write frame to output video
         writer.write(frame)
