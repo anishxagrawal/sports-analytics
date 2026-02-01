@@ -68,6 +68,9 @@ class Player(BaseEntity):
         self.team_votes: deque = deque(maxlen=30)  # Extended window for stability
         self.team_id: Optional[TeamLabel] = None
         self._team_committed = False  # Track if team has been committed
+
+        self.field_positions = deque(maxlen=max_history)
+        self.field_positions_anchored = deque(maxlen=max_history)
     
     def record_ground_position(self, bbox: Optional[Tuple[float, float, float, float]]) -> None:
         """
