@@ -22,6 +22,8 @@ from commentary.prompt_builder import PromptBuilder
 from commentary.llm_adapter import LLMAdapter
 from spatial.projection_pipeline import ProjectionPipeline
 from visualization.pitch_overlay import PitchOverlay
+from visualization.object_renderer import draw_players_with_metrics, draw_ball_with_metrics
+from analytics.motion import compute_field_speed
 
 
 def main():
@@ -65,6 +67,10 @@ def main():
         fps,
         (video_reader.width, video_reader.height)
     )
+    
+    if not writer.isOpened():
+        print("ERROR: Failed to open video writer!")
+        return
 
     detector = YOLODetector(
         model_path=model_path,
@@ -78,7 +84,8 @@ def main():
     
     # Initialize spatial projection pipeline
     # Converts bounding boxes to ground points and field-space coordinates
-    projection_pipeline = ProjectionPipeline(enable_anchoring=False)
+    # with soft spatial anchoring for stability
+    projection_pipeline = ProjectionPipeline(enable_anchoring=True)
     
     # --- Pitch overlay integration ---
     # Initialize debug visualization overlay
@@ -125,41 +132,9 @@ def main():
         
         detections = filtered_detections
 
-        # DEBUG: draw raw detections BEFORE tracking
-        for det in detections:
-            x1, y1, x2, y2 = map(int, det["bbox"])
-            cls = det["class_id"]
-            conf = det["confidence"]
-
-            if cls == 1:
-                color = (0, 0, 255)  # Ball: red
-            elif cls == 0:
-                color = (255, 0, 0)  # Player: blue
-            elif cls == 2:
-                color = (0, 255, 255)  # Referee: yellow
-            else:
-                color = (255, 255, 255)  # Unknown: white
-            
-            class_name = class_names.get(cls, str(cls))
-            label = f"RAW {class_name} cls={cls} conf={conf:.2f}"
-
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(
-                frame,
-                label,
-                (x1, y1 - 5),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                color,
-                1
-            )
-
         result = tracker.update(detections, frame, frame_idx)
         tracks = result["tracks"]
         ball_state = result["ball"]
-        
-        if frame_idx % 50 == 0:
-            print(f"Frame {frame_idx}: {len(detections)} detections, {len(tracks)} tracks")
 
         enriched_tracks = projection_pipeline.process_frame(
             detections=tracks,
@@ -167,12 +142,6 @@ def main():
             frame=frame,
             frame_index=frame_idx
         )
-        
-        if frame_idx == 10:
-            print(f"DEBUG: Num enriched tracks: {len(enriched_tracks)}")
-            if enriched_tracks:
-                print(f"DEBUG: First track field_position: {enriched_tracks[0].get('field_position')}")
-                print(f"DEBUG: First track keys: {enriched_tracks[0].keys()}")
 
         if ball_state.get("position") is not None:
             ball_pos = ball_state["position"]
@@ -204,39 +173,11 @@ def main():
         entity_manager.update(enriched_tracks, frame_idx, timestamp)
         entity_manager.update_ball(ball_state, frame_idx)
         
-        # Draw tracking results (pixel-space visualization unchanged)
-        for track in enriched_tracks:
-            x1, y1, x2, y2 = map(int, track["bbox"])
-            track_id = track["track_id"]
-
-#            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            
-            label_text = f"ID {track_id}"
-            
-#            cv2.putText(
-#                frame,
-#                label_text,
-#                (x1, y1 - 10),
-#                cv2.FONT_HERSHEY_SIMPLEX,
-#                0.6,
-#                (0, 255, 0),
-#                2
-#            )
-   
-        # Draw ball visualization
-        ball = entity_manager.ball
-        if ball.is_visible():
-            ball_position = ball.get_position()
-            if ball_position is not None:
-                ball_x, ball_y = int(ball_position[0]), int(ball_position[1])
-                cv2.circle(frame, (ball_x, ball_y), 6, (0, 140, 255), -1)
-                
-                trajectory = ball.get_trajectory()
-                if len(trajectory) > 1:
-                    for i in range(len(trajectory) - 1):
-                        pt1 = (int(trajectory[i][0]), int(trajectory[i][1]))
-                        pt2 = (int(trajectory[i + 1][0]), int(trajectory[i + 1][1]))
-                        cv2.line(frame, pt1, pt2, (0, 180, 255), 2)
+        # Draw player visualization with circles, arrows, and metrics
+        draw_players_with_metrics(frame, entity_manager.get_active_players(), fps)
+        
+        # Draw ball visualization with circle, arrow, and metrics
+        draw_ball_with_metrics(frame, entity_manager.ball, fps)
         
         # Event detection
         all_events = []
@@ -257,30 +198,42 @@ def main():
         # Collect field positions for visualization
         players_for_viz = []
         for player in entity_manager.get_active_players():
-            field_pos = getattr(player, 'field_position', None)
-            field_pos_anchored = getattr(player, 'field_position_anchored', None)
+            # Get latest field position from deque
+            field_pos = None
+            field_pos_anchored = None
+            
+            if hasattr(player, 'field_positions_anchored') and player.field_positions_anchored:
+                field_pos_anchored = player.field_positions_anchored[-1]
+            
+            if hasattr(player, 'field_positions') and player.field_positions:
+                field_pos = player.field_positions[-1]
+            
             players_for_viz.append({
                 'field_position': field_pos,
                 'field_position_anchored': field_pos_anchored
             })
-            if frame_idx % 30 == 0 and field_pos is not None:
-                print(f"DEBUG: Player has field_position: {field_pos}")
         
         ball_for_viz = None
         if entity_manager.ball.is_visible():
-            field_pos = getattr(entity_manager.ball, 'field_position', None)
-            field_pos_anchored = getattr(entity_manager.ball, 'field_position_anchored', None)
+            field_pos = None
+            field_pos_anchored = None
+            
+            if hasattr(entity_manager.ball, 'field_position_anchored') and entity_manager.ball.field_position_anchored:
+                field_pos_anchored = entity_manager.ball.field_position_anchored
+            
+            if hasattr(entity_manager.ball, 'field_position') and entity_manager.ball.field_position:
+                field_pos = entity_manager.ball.field_position
+            
             ball_for_viz = {
                 'field_position': field_pos,
                 'field_position_anchored': field_pos_anchored
             }
-            if frame_idx % 30 == 0:
-                print(f"DEBUG: Ball field_position: {field_pos}, anchored: {field_pos_anchored}")
         
         # Render overlay onto frame
         frame = pitch_overlay.render(frame, players_for_viz, ball_for_viz)
         # --- End pitch overlay integration ---
 
+        # Write frame to output video
         writer.write(frame)
 
     # ✅ Proper cleanup (ONCE)
